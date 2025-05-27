@@ -1,8 +1,8 @@
 from fastapi import FastAPI, File, UploadFile, HTTPException
-from fastapi.responses import JSONResponse
-from fastapi.middleware.cors import CORSMiddleware
-import tensorflow as tf
 from tensorflow.keras.preprocessing.image import img_to_array
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+import tensorflow as tf
 import numpy as np
 from PIL import Image
 import io # Para manejar los bytes de la imagen
@@ -14,23 +14,20 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# --- 2. Configurar CORS (Crucial para que tu frontend se pueda comunicar) ---
-# En desarrollo, permitimos todos los orígenes.
-# En producción, deberías cambiar '*' por el dominio o dominios específicos de tu frontend.
+# --- 2. Cors
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"], # Permite todos los orígenes
+    allow_origins=["http://localhost:5173"],
     allow_credentials=True,
-    allow_methods=["*"], # Permite todos los métodos (POST en este caso)
-    allow_headers=["*"], # Permite todos los encabezados
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # --- 3. Cargar el Modelo de TensorFlow ---
-# Define la ruta a tu modelo guardado.
-MODEL_PATH = "model/modelo_skin.h5" # Asumiendo que está en una subcarpeta 'model'
+MODEL_PATH = "model/modelo_skin.h5"
 
-model = None # Inicializamos model como None
-CLASSES = ["melanoma", "normal_skin", "psoriasis"] # Clases de tu modelo
+model = None 
+CLASSES = ["melanoma", "normal_skin", "psoriasis"] 
 
 @app.on_event("startup")
 async def load_model_on_startup():
@@ -42,15 +39,14 @@ async def load_model_on_startup():
     try:
         print(f"Cargando modelo desde: {MODEL_PATH}...")
         model = tf.keras.models.load_model(MODEL_PATH)
-        # Opcional: imprimir el resumen del modelo para verificar que cargó correctamente
         # model.summary()
         print("Modelo cargado exitosamente.")
     except Exception as e:
-        # Si el modelo no puede cargarse, levanta una excepción para que la aplicación no inicie
         print(f"ERROR: No se pudo cargar el modelo. Asegúrate de que la ruta sea correcta y el archivo exista. Detalles: {e}")
         raise RuntimeError(f"Error al cargar el modelo: {e}")
 
-# --- 4. Endpoint Raíz (Opcional, para verificar que la API está viva) ---
+
+# --- 4. Endpoint Raíz 
 @app.get("/")
 async def read_root():
     return {"message": "API de Clasificación de Piel está corriendo!"}
