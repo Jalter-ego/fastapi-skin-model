@@ -17,7 +17,7 @@ app = FastAPI(
 # --- 2. Cors
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=["http://localhost:5173","https://happy-dune-00983ce1e.1.azurestaticapps.net"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
