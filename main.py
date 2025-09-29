@@ -46,9 +46,6 @@ async def load_models_on_startup():
         print(f"Cargando modelo desde: {MODEL_PATH}...")
         model = tf.keras.models.load_model(MODEL_PATH)
         print("Modelo 1 cargado exitosamente.")
-        background = np.random.rand(10, 224, 224, 3) 
-        explainer = shap.GradientExplainer(model, background)
-        print("Explainer SHAP inicializado.")
     except Exception as e:
         print(f"ERROR: No se pudo cargar el modelo 1. Detalles: {e}")
         raise RuntimeError(f"Error al cargar el modelo 1: {e}")
@@ -126,53 +123,5 @@ async def predict_benign_malignant(image: UploadFile = File(...)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error interno del servidor: {e}")
 
-
-
-@app.post("/explain/")
-async def explain(image: UploadFile = File(...)):
-    if not image.content_type.startswith("image/"):
-        raise HTTPException(status_code=400, detail="El archivo no es una imagen.")
-
-    try:
-        contents = await image.read()
-        pil_image = Image.open(io.BytesIO(contents)).convert("RGB")
-        pil_image = pil_image.resize((224, 224))
-        img_array = img_to_array(pil_image) / 255.0
-        img_array = np.expand_dims(img_array, axis=0)
-
-        # Predicción
-        predictions = model.predict(img_array)[0]
-        class_index = np.argmax(predictions)
-        class_label = CLASSES[class_index]
-        confidence = float(predictions[class_index])
-
-        # SHAP
-        shap_values = explainer.shap_values(img_array)
-        shap_map = np.abs(shap_values[0][0])  # magnitud
-
-        # Guardar el heatmap temporalmente
-        filename = f"shap_{uuid.uuid4().hex}.png"
-        plt.figure(figsize=(6, 3))
-        plt.subplot(1, 2, 1)
-        plt.imshow(img_array[0])
-        plt.axis("off")
-        plt.title("Imagen Original")
-
-        plt.subplot(1, 2, 2)
-        plt.imshow(img_array[0])
-        plt.imshow(shap_map.mean(axis=-1), cmap="RdBu_r", alpha=0.5)
-        plt.axis("off")
-        plt.title("Explicación SHAP")
-        plt.savefig(filename, bbox_inches="tight", dpi=150)
-        plt.close()
-
-        return {
-            "class": class_label,
-            "confidence": round(confidence, 4),
-            "shap_image": f"/download/{filename}"
-        }
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error en SHAP: {e}")
 # Para ejecutar localmente, usa: uvicorn main:app --reload --host 0.0.0.0 --port 5000
 # Puedes acceder a la documentación interactiva en: http://127.0.0.1:8000/docs
