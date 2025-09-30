@@ -1,13 +1,15 @@
-from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi import FastAPI, File, UploadFile, HTTPException, Request
 from tensorflow.keras.preprocessing.image import img_to_array
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
+from starlette.status import HTTP_301_MOVED_PERMANENTLY, HTTP_307_TEMPORARY_REDIRECT
 import tensorflow as tf
 import numpy as np
 from PIL import Image
 import io 
 import os
 from dotenv import load_dotenv
+import logging
 
 load_dotenv() 
 from azure.storage.blob import BlobServiceClient 
@@ -19,9 +21,13 @@ app = FastAPI(
     version="1.0.0"
 )
 
+# Configura logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173","https://happy-dune-00983ce1e.1.azurestaticapps.net"],
+    allow_origins=["http://localhost:5173", "https://happy-dune-00983ce1e.1.azurestaticapps.net"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -90,6 +96,27 @@ async def load_models_on_startup():
     except Exception as e:
         print(f"ERROR crítico en la carga de modelos: {e}")
         raise RuntimeError(f"Error al inicializar la aplicación: {e}")
+
+@app.middleware("http")
+async def handle_redirects(request: Request, call_next):
+    # Log para depurar
+    logger.info(f"Solicitud entrante: {request.method} {request.url.scheme}://{request.url.netloc}{request.url.path}")
+    
+    response = await call_next(request)
+    
+    # Si hay una redirección 307 (de Azure), conviértela a 301 y fuerza HTTPS
+    if response.status_code == HTTP_307_TEMPORARY_REDIRECT:
+        logger.warning("Detectada redirección 307 de Azure; convirtiendo a 301 con HTTPS")
+        redirect_url = str(response.headers.get("location", ""))
+        if redirect_url.startswith("http://"):
+            redirect_url = redirect_url.replace("http://", "https://", 1)
+        response = RedirectResponse(url=redirect_url, status_code=HTTP_301_MOVED_PERMANENTLY)
+    
+    # Fuerza HSTS en respuestas HTTPS
+    if request.url.scheme == "https":
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    
+    return response
 
 @app.get("/")
 async def read_root():
