@@ -3,7 +3,6 @@ from tensorflow.keras.preprocessing.image import img_to_array
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.responses import FileResponse
-import matplotlib.pyplot as plt
 import tensorflow as tf
 import numpy as np
 from PIL import Image
