@@ -2,23 +2,23 @@ from fastapi import FastAPI, File, UploadFile, HTTPException
 from tensorflow.keras.preprocessing.image import img_to_array
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from fastapi.responses import FileResponse
 import tensorflow as tf
 import numpy as np
 from PIL import Image
 import io 
-import shap
-import uuid
 import os
+from dotenv import load_dotenv
 
-# --- 1. Inicializar la aplicación FastAPI ---
+load_dotenv() 
+from azure.storage.blob import BlobServiceClient 
+import uuid 
+
 app = FastAPI(
     title="API de Clasificación de Piel",
     description="Despliega un modelo de TensorFlow para clasificar condiciones de la piel a partir de imágenes.",
     version="1.0.0"
 )
 
-# --- 2. Cors
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173","https://happy-dune-00983ce1e.1.azurestaticapps.net"],
@@ -27,34 +27,69 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-MODEL_PATH = "model/modelo_skin.h5"
+AZURE_STORAGE_CONNECTION_STRING = os.environ.get("AZURE_STORAGE_CONNECTION_STRING")
+CONTAINER_NAME = "ml-models" # El contenedor que creaste
+
+# Nombres de los modelos en el Blob Storage
+MODEL_BLOB_NAME_1 = "modelo_skin.h5"
+MODEL_BLOB_NAME_2 = "modelo_melanoma_benign-malignant.h5"
+
+# Rutas locales temporales donde se guardarán los modelos descargados
+MODEL_PATH = f"./temp/{MODEL_BLOB_NAME_1}"
+MODEL_PATH2 = f"./temp/{MODEL_BLOB_NAME_2}"
+
 model = None 
 CLASSES = ["melanoma", "normal_skin", "psoriasis"] 
-
-MODEL_PATH2 = "model/modelo_melanoma_benign-malignant.h5"
 model2 = None
 CLASSES2 = ["benigno", "maligno"]
 
 explainer = None
 
+def download_blob_to_file(blob_service_client: BlobServiceClient, container_name, blob_name, local_file_path):
+    """Descarga un blob y lo guarda en una ruta de archivo local."""
+    try:
+        blob_client = blob_service_client.get_blob_client(container=container_name, blob=blob_name)
+        
+        os.makedirs(os.path.dirname(local_file_path), exist_ok=True)
+        
+        print(f"Descargando {blob_name} a {local_file_path}...")
+        with open(file=local_file_path, mode="wb") as download_file:
+            download_file.write(blob_client.download_blob().readall())
+        print(f"Descarga de {blob_name} completada.")
+        return True
+    except Exception as e:
+        print(f"ERROR al descargar el blob {blob_name}. Detalles: {e}")
+        return False
+
 
 @app.on_event("startup")
 async def load_models_on_startup():
     global model, model2
+    
+    if not AZURE_STORAGE_CONNECTION_STRING:
+        print("ERROR: La variable AZURE_STORAGE_CONNECTION_STRING no está configurada.")
+        raise RuntimeError("Fallo al obtener la cadena de conexión de Azure Storage.")
+
     try:
-        print(f"Cargando modelo desde: {MODEL_PATH}...")
-        model = tf.keras.models.load_model(MODEL_PATH)
-        print("Modelo 1 cargado exitosamente.")
+        blob_service_client = BlobServiceClient.from_connection_string(AZURE_STORAGE_CONNECTION_STRING)
+        
+        if download_blob_to_file(blob_service_client, CONTAINER_NAME, MODEL_BLOB_NAME_1, MODEL_PATH):
+            print(f"Cargando modelo 1 desde: {MODEL_PATH}...")
+            model = tf.keras.models.load_model(MODEL_PATH) 
+            print("Modelo 1 cargado exitosamente.")
+        else:
+            raise RuntimeError("Fallo en la descarga y carga del Modelo 1.")
+            
+        if download_blob_to_file(blob_service_client, CONTAINER_NAME, MODEL_BLOB_NAME_2, MODEL_PATH2):
+            print(f"Cargando modelo 2 desde: {MODEL_PATH2}...")
+            model2 = tf.keras.models.load_model(MODEL_PATH2)
+            print("Modelo 2 cargado exitosamente.")
+        else:
+            raise RuntimeError("Fallo en la descarga y carga del Modelo 2.")
+            
     except Exception as e:
-        print(f"ERROR: No se pudo cargar el modelo 1. Detalles: {e}")
-        raise RuntimeError(f"Error al cargar el modelo 1: {e}")
-    try:
-        print(f"Cargando modelo desde: {MODEL_PATH2}...")
-        model2 = tf.keras.models.load_model(MODEL_PATH2)
-        print("Modelo 2 cargado exitosamente.")
-    except Exception as e:
-        print(f"ERROR: No se pudo cargar el modelo 2. Detalles: {e}")
-        raise RuntimeError(f"Error al cargar el modelo 2: {e}")
+        print(f"ERROR crítico en la carga de modelos: {e}")
+        raise RuntimeError(f"Error al inicializar la aplicación: {e}")
 
 @app.get("/")
 async def read_root():
